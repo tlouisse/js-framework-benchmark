@@ -18,27 +18,47 @@ interface Timingresult {
     dur?: number;
     end?: number;
     mem?: number;
+    evt?: any;
 }
 
 function extractRelevantEvents(entries: logging.Entry[]) {
     let filteredEvents: Timingresult[] = [];
     entries.forEach(x => {
         let e = JSON.parse(x.message).message;
+        if (config.LOG_DETAILS) console.log(JSON.stringify(e));
         if (e.params.name==='EventDispatch') {
             if (e.params.args.data.type==="click") {
                 filteredEvents.push({type:'click', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts+e.params.dur});
             }
         } else if (e.params.name==='TimeStamp' && 
-            (e.params.args.data.message==='finishedBenchmark' || e.params.args.data.message==='runBenchmark' || e.params.args.data.message==='initBenchmark')) {
+            (e.params.args.data.message==='afterBenchmark' || e.params.args.data.message==='finishedBenchmark' || e.params.args.data.message==='runBenchmark' || e.params.args.data.message==='initBenchmark')) {
             filteredEvents.push({type: e.params.args.data.message, ts: +e.params.ts, dur: 0, end: +e.params.ts});
         } else if (e.params.name==='navigationStart') {
             filteredEvents.push({type:'navigationStart', ts: +e.params.ts, dur: 0, end: +e.params.ts});
         } else if (e.params.name==='Paint') {
-            filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts+e.params.dur});
+            filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts+e.params.dur, evt: JSON.stringify(e)});
+        // } else if (e.params.name==='Rasterize') {
+        //     filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts+e.params.dur, evt: JSON.stringify(e)});
+        // } else if (e.params.name==='CompositeLayers') {
+        //     filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts, evt: JSON.stringify(e)});
+        // } else if (e.params.name==='Layout') {
+        //     filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: e.params.ts, evt: JSON.stringify(e)});
+        // } else if (e.params.name==='UpdateLayerTree') {
+        //     filteredEvents.push({type:'paint', ts: +e.params.ts, dur: +e.params.dur, end: +e.params.ts+e.params.dur, evt: JSON.stringify(e)});
         } else if (e.params.name==='MajorGC' && e.params.args.usedHeapSizeAfter) {
-            filteredEvents.push({type:'gc', ts: +e.params.ts, end:1, mem: Number(e.params.args.usedHeapSizeAfter)/1024/1024});
+            filteredEvents.push({type:'gc', ts: +e.params.ts, end:+e.params.ts, mem: Number(e.params.args.usedHeapSizeAfter)/1024/1024});
         }
     });
+    return filteredEvents;
+}
+
+async function fetchEventsFromPerformanceLog(driver: WebDriver): Promise<Timingresult[]> {
+    let filteredEvents : Timingresult[] = [];
+    let entries = [];
+    do {        
+        entries = await driver.manage().logs().get(logging.Type.PERFORMANCE);
+        filteredEvents = filteredEvents.concat(extractRelevantEvents(entries));
+    } while (entries.length > 0);
     return filteredEvents;
 }
 
@@ -56,13 +76,7 @@ function asString(res: Timingresult[]): string {
 async function computeResultsCPU(driver: WebDriver): Promise<number[]> {
     let entriesBrowser = await driver.manage().logs().get(logging.Type.BROWSER);
     if (config.LOG_DEBUG) console.log("browser entries", entriesBrowser);
-    let filteredEvents : Timingresult[] = [];
-    let entries = [];
-    let cont = true;
-    do {        
-        entries = await driver.manage().logs().get(logging.Type.PERFORMANCE);
-        filteredEvents = filteredEvents.concat(extractRelevantEvents(entries));
-    } while (entries.length > 0);
+    let filteredEvents = await fetchEventsFromPerformanceLog(driver);
 
     if (config.LOG_DEBUG) console.log("filteredEvents ", asString(filteredEvents));
 
@@ -92,9 +106,12 @@ async function computeResultsCPU(driver: WebDriver): Promise<number[]> {
                 throw "at least one paint event is expected after the click event";
             }
 
-            let upperBoundForSoundnessCheck = (evts[1][0].end - eventsDuringBenchmark[0].ts)/1000.0;
-            let duration = (R.last(paints).end - clicks[0].ts)/1000.0;
+            let lastPaint = R.reduce((max, elem) => max.end > elem.end ? max : elem, {end: 0}, paints);
 
+            let upperBoundForSoundnessCheck = (R.last(eventsDuringBenchmark).end - eventsDuringBenchmark[0].ts)/1000.0;
+            let duration = (lastPaint.end - clicks[0].ts)/1000.0;
+
+            console.log("*** duraton", duration, "upper bound ", upperBoundForSoundnessCheck);            
             if (duration<0) {
                 console.log("soundness check failed. reported duration is less 0", asString(eventsDuringBenchmark));
                 throw "soundness check failed. reported duration is less 0";                    
@@ -104,7 +121,6 @@ async function computeResultsCPU(driver: WebDriver): Promise<number[]> {
                 console.log("soundness check failed. reported duration is bigger than whole benchmark duration", asString(eventsDuringBenchmark));
                 throw "soundness check failed. reported duration is bigger than whole benchmark duration";
             }
-            console.log("*** duraton", duration, "upper bound ", upperBoundForSoundnessCheck);            
             results.push(duration);
         }
         remaining = R.drop(1, evts[1]);
@@ -119,10 +135,8 @@ async function computeResultsCPU(driver: WebDriver): Promise<number[]> {
 async function computeResultsMEM(driver: WebDriver): Promise<number[]> {
     let entriesBrowser = await driver.manage().logs().get(logging.Type.BROWSER);
     if (config.LOG_DEBUG) console.log("browser entries", entriesBrowser);
-    let entries = await driver.manage().logs().get(logging.Type.PERFORMANCE);
-
-    let filteredEvents = extractRelevantEvents(entries);
-
+    let filteredEvents = await fetchEventsFromPerformanceLog(driver);
+    
     if (config.LOG_DEBUG) console.log("filteredEvents ", filteredEvents);
 
     let remaining  = R.dropWhile(type_eq('initBenchmark'))(filteredEvents);
@@ -156,13 +170,15 @@ async function computeResultsStartup(driver: WebDriver): Promise<number> {
     
     let entriesBrowser = await driver.manage().logs().get(logging.Type.BROWSER);
     if (config.LOG_DEBUG) console.log("browser entries", entriesBrowser);
-    let entries = await driver.manage().logs().get(logging.Type.PERFORMANCE);
-
-    let filteredEvents = extractRelevantEvents(entries);
+    let filteredEvents = await fetchEventsFromPerformanceLog(driver);
 
     if (config.LOG_DEBUG) console.log("filteredEvents ", filteredEvents);
 
-    let eventsDuringBenchmark  = R.dropWhile(type_neq('runBenchmark'))(filteredEvents);
+    let eventsDuringBenchmark  = 
+        R.pipe(
+            R.dropWhile(type_neq('runBenchmark')),
+            R.takeWhile(type_neq('finishedBenchmark'))   
+        )(filteredEvents);
 
     if (config.LOG_DEBUG) console.log("eventsDuringBenchmark ", eventsDuringBenchmark);
             
@@ -213,18 +229,31 @@ function buildDriver() {
     // options = options.setChromeBinaryPath("/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome");
     // options = options.setChromeBinaryPath("/Applications/Chromium.app/Contents/MacOS/Chromium");
     // options = options.setChromeBinaryPath("/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary");
+    if(args.headless)
+	options = options.addArguments("--headless");
     options = options.addArguments("--js-flags=--expose-gc");
     options = options.addArguments("--disable-infobars");
     options = options.addArguments("--disable-background-networking");
     options = options.addArguments("--disable-cache");
     options = options.addArguments("--disable-extensions");    
+    options = options.addArguments("--window-size=1200,800")
     options = options.setLoggingPrefs(logPref);
-    options = options.setPerfLoggingPrefs(<any>{enableNetwork: false, enablePage: false, enableTimeline: false, traceCategories: "devtools.timeline,blink.user_timing", bufferUsageReportingInterval: 20000});
-    // options = options.setPerfLoggingPrefs(<any>{enableNetwork: false, enablePage: false, enableTimeline: false, traceCategories: "v8,blink.console,disabled-by-default-devtools.timeline,devtools.timeline,blink.user_timing", bufferUsageReportingInterval: 20000});
+    options = options.setPerfLoggingPrefs(<any>{enableNetwork: false, enablePage: false, enableTimeline: false, traceCategories: "devtools.timeline, disabled-by-default-devtools.timeline,blink.user_timing"});
     return new Builder()
         .forBrowser('chrome')
         .setChromeOptions(options)    
         .build();
+}
+
+async function forceGC(framework: FrameworkData, driver: WebDriver): Promise<any> {
+    if (framework.name.startsWith("angular-v4")) {
+        // workaround for window.gc for angular 4 - closure rewrites windows.gc");
+        await driver.executeScript("window.Angular4PreservedGC();");
+    } else {
+        for (let i=0;i<5;i++) {
+            await driver.executeScript("window.gc();");
+        }
+    }
 }
 
 async function snapMemorySize(driver: WebDriver): Promise<number> {
@@ -247,30 +276,22 @@ async function runBenchmark(driver: WebDriver, benchmark: Benchmark, framework: 
     await benchmark.run(driver, framework);
     if (config.LOG_PROGRESS) console.log("after run ",benchmark.id, benchmark.type, framework.name);
     if (benchmark.type === BenchmarkType.MEM) {
-        if (framework.name.startsWith("angular-v4")) {
-            console.log("WARN: skipping window.gc for angular 4 - doesn't work currently");
-            return null;
-        } else {
-            for (let i=0;i<5;i++) {
-                await driver.executeScript("window.gc();");
-            }
-        }
+        await forceGC(framework, driver);
     }            
-    // console.log("Check Mem: ",await snapMemorySize(driver));
+}
+
+async function afterBenchmark(driver: WebDriver, benchmark: Benchmark, framework: FrameworkData) : Promise<any> {
+    if (benchmark.after) {
+        await benchmark.after(driver, framework);
+        if (config.LOG_PROGRESS) console.log("after benchmark ",benchmark.id, benchmark.type, framework.name);
+    }
 }
 
 async function initBenchmark(driver: WebDriver, benchmark: Benchmark, framework: FrameworkData): Promise<any> {
     await benchmark.init(driver, framework)
     if (config.LOG_PROGRESS) console.log("after initialized ",benchmark.id, benchmark.type, framework.name);                                 
     if (benchmark.type === BenchmarkType.MEM) {
-        if (framework.name.startsWith("angular-v4")) {
-            console.log("WARN: skipping window.gc for angular 4 - doesn't work currently");
-            return null;
-        } else {
-            for (let i=0;i<5;i++) {
-                await driver.executeScript("window.gc();");
-            }
-        }
+        await forceGC(framework, driver);
     }
 }
 
@@ -287,7 +308,7 @@ function writeResult(res: Result, dir: string) {
         data = data.slice(0).sort((a:number,b:number) => a-b);
         // data = data.slice(0, config.REPEAT_RUN - config.DROP_WORST_RUN);
         let s = jStat(data);
-        console.log(`result ${fileName(res.framework, benchmark)}`, s.min(), s.max(), s.mean(), s.stdev());
+        console.log(`result ${fileName(res.framework, benchmark)} min ${s.min()} max ${s.max()} mean ${s.mean()} median ${s.median()} stddev ${s.stdev()}`);
         let result: JSONResult = {
             "framework": framework,
             "benchmark": benchmark.id,
@@ -323,6 +344,8 @@ async function runMemOrCPUBenchmark(framework: FrameworkData, benchmark: Benchma
                 await driver.executeScript("console.timeStamp('runBenchmark')");
                 await runBenchmark(driver, benchmark, framework);
                 await driver.executeScript("console.timeStamp('finishedBenchmark')");
+                await afterBenchmark(driver, benchmark, framework);
+                await driver.executeScript("console.timeStamp('afterBenchmark')");
             } catch (e) {
                 await takeScreenshotOnError(driver, 'error-'+framework.name+'-'+benchmark.id+'.png', e);
                 throw e;
@@ -354,6 +377,8 @@ async function runStartupBenchmark(framework: FrameworkData, benchmark: Benchmar
                 await driver.executeScript("console.timeStamp('runBenchmark')");
                 await runBenchmark(driver, benchmark, framework);
                 await driver.executeScript("console.timeStamp('finishedBenchmark')");
+                await afterBenchmark(driver, benchmark, framework);
+                await driver.executeScript("console.timeStamp('afterBenchmark')");
                 results.push(await computeResultsStartup(driver));
             } catch (e) {
                 await takeScreenshotOnError(driver, 'error-'+framework.name+'-'+benchmark.id+'.png', e);
@@ -400,6 +425,7 @@ let args = yargs(process.argv)
 .default('check','false')
 .default('exitOnError','false')
 .default('count', config.REPEAT_RUN)
+.boolean('headless')
 .array("framework").array("benchmark").argv;
 
 console.log(args);

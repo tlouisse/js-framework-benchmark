@@ -2,8 +2,6 @@
 
 import React from 'react'
 import {connect} from 'react-redux';
-import shallowCompare from 'react-addons-shallow-compare';
-
 import {
   buildData,
   remove,
@@ -50,17 +48,18 @@ export class Row extends React.Component {
         this.click = this.click.bind(this);
         this.del = this.del.bind(this);
     }
+    shouldComponentUpdate(nextProps, nextState) {
+        const {data,styleClass}=this.props;
+        const nextStyleClass=nextProps.styleClass;
+        const nextData= nextProps.data;
+        return !data.equals(nextData)||styleClass!=nextStyleClass
+    }
     click() {
         this.props.onClick(this.props.data.get('id'));
     }
     del() {
         this.props.onDelete(this.props.data.get('id'));
     }
-
-    shouldComponentUpdate(nextProps, nextState) {
-      return shallowCompare(this, nextProps, nextState);
-    }
-
     render() {
         let {styleClass, onClick, onDelete, data} = this.props;
         return (<tr className={styleClass}>
@@ -88,6 +87,13 @@ export class Controller extends React.Component{
         this.componentDidUpdate = this.componentDidUpdate.bind(this);
         this.componentDidMount = this.componentDidMount.bind(this);
         this.start = 0;
+    }
+    shouldComponentUpdate(nextProps, nextState) {
+
+        const {data,selected}=this.props;
+        const nextData= nextProps.data;
+        const nextSelected= nextProps.selected;
+        return !data.equals(nextData)||selected!=nextSelected;
     }
     printDuration() {
         stopMeasure();
@@ -131,16 +137,17 @@ export class Controller extends React.Component{
         this.props.swapRows();
     }
     render () {
+        const selected = this.props.selected;
         var rows = this.props.data.map((d,i) => {
             const id = d.get('id');
-            var className = id === this.props.selected ? 'danger':'';
+            var className = id === selected ? 'danger':'';
             return <Row key={id} data={d} onClick={this.select} onDelete={this.delete} styleClass={className}></Row>
         }).toArray();
         return (<div className="container">
             <div className="jumbotron">
                 <div className="row">
                     <div className="col-md-6">
-                        <h1>React v15.4.2 Redux v3.6.0</h1>
+                        <h1>React v16.0.0 Redux v3.7.2</h1>
                     </div>
                     <div className="col-md-6">
                         <div className="row">
@@ -175,10 +182,12 @@ export class Controller extends React.Component{
 }
 
 export default connect(
-  state => ({
+  state => {
+      return ({
     data: state.store.get('data'),
     selected: state.store.get('selected')
-  }),
+  })
+},
   {
     buildData: () => buildData(),
     remove: id => remove(id),
