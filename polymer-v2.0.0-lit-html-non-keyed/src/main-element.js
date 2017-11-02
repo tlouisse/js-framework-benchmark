@@ -20,8 +20,8 @@ export class MainElement extends HTMLElement {
     set data(d) { this._data = d; this.invalidate(); }
 
     constructor() {
-    super();
-    this.attachShadow({mode: 'open'});
+        super();
+        this.attachShadow({mode: 'open'});
     }
 
     invalidate() {
@@ -48,7 +48,7 @@ export class MainElement extends HTMLElement {
                                 <button type="button" class="btn btn-primary btn-block" id="run">Create 1,000 rows</button>
                             </div>
                             <div class="col-sm-6 smallpad">
-                                <button type="button" class="btn btn-primary btn-block" id="runLots" on-click="runLots">Create 10,000 rows</button>
+                                <button type="button" class="btn btn-primary btn-block" id="runlots" on-click="runlots">Create 10,000 rows</button>
                             </div>
                             <div class="col-sm-6 smallpad">
                                 <button type="button" class="btn btn-primary
@@ -116,7 +116,7 @@ export class MainElement extends HTMLElement {
         stopMeasure();
     }
 
-    runLots() {
+    runlots() {
         startMeasure("runLots");
         this.data = this.buildData(10000);
         stopMeasure();
@@ -159,6 +159,7 @@ export class MainElement extends HTMLElement {
         for (let i=0;i<this.data.length;i+=10) {
             this.data[i].label = (this.data[i].label + ' !!!');
         }    
+        this.invalidate();
         stopMeasure();
     }
 
