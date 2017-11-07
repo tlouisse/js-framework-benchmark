@@ -74,6 +74,7 @@ export let frameworks = [
     f("pico-dom-v1.0.0-keyed", true),
     f("plastiq-v1.33.0-keyed", true),
     f("polymer-v2.0.0-non-keyed", false, {uri: "polymer-v2.0.0-non-keyed", useShadowRoot: true}),
+    f("polymer-v2.0.0-class-non-keyed", false, {uri: "polymer-v2.0.0-class-non-keyed", useShadowRoot: true}),
     f("preact-v7.1.0-keyed", true),
     f("pux-v11.0.0-non-keyed", false),
     f("ractive-v0.8.12-keyed", true),
@@ -107,4 +108,7 @@ export let frameworks = [
     f("san-v3.2.6-non-keyed", false),
     f("vue-v2.4.4-keyed", true),
     f("vue-v2.4.4-non-keyed", false),
+    f("stenciljs-v0.0.6-non-keyed", false,{uri: "stenciljs-v0.0.6-non-keyed/www"}),
+    f("hyper-html-v1.12.5-non-keyed", false)
+    
 ]

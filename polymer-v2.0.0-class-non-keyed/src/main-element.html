@@ -93,18 +93,6 @@ var stopMeasure = function() {
             super();
         }
 
-        connectedCallback() {
-            super.connectedCallback();
-        }
-
-        ready() {
-            super.ready();
-
-            // Array.prototype.forEach.call(this.shadowRoot.querySelectorAll('button'), b => {
-            //     b.addEventListener('click',this[b.id].bind(this))
-            // });    
-        }
-
         add() {
             startMeasure("add");
             this.data = this.data.concat(this.buildData(1000));
@@ -112,7 +100,6 @@ var stopMeasure = function() {
         }
 
         run() {
-            console.log('run');
             startMeasure("run");
             this.data = this.buildData(1000);
             stopMeasure();
